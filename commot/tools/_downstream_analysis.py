@@ -97,6 +97,12 @@ def communication_deg_detection(
     """
     # setup R environment
     # !!! anndata2ri works only with 3.6.3 on the tested machine
+    #import os
+    #os.environ['R_HOME'] = 'C:\Program Files\Microsoft\R Open\R-3.4.0' #path to your R installation
+    #os.environ['R_USER'] = 'C:\ProgramData\Anaconda3\Lib\site-packages\rpy2' #path depends on where you installed Python. Mine is the Anaconda distribution
+
+
+
     import rpy2
     import anndata2ri
     import rpy2.robjects as ro
@@ -144,24 +150,43 @@ def communication_deg_detection(
 
     # send adata to R
     adata_r = anndata2ri.py2rpy(adata_deg)
+    print(adata_r.var_names)
+
+    print("converted adata to R")
+
     ro.r.assign("adata", adata_r)
     ro.r("X <- as.matrix( assay( adata, 'X') )")
     ro.r.assign("pseudoTime", comm_sum)
     ro.r.assign("cellWeight", cell_weight)
 
+    print("Start fitting")
     # perform analysis (tradeSeq-1.0.1 in R-3.6.3)
     string_fitGAM = 'sce <- fitGAM(counts=X, pseudotime=pseudoTime[,1], cellWeights=cellWeight[,1], nknots=%d, verbose=TRUE)' % nknots
-    ro.r(string_fitGAM)
-    ro.r('assoRes <- data.frame( associationTest(sce, global=FALSE, lineage=TRUE) )')
-    ro.r('assoRes[is.nan(assoRes[,"waldStat_1"]),"waldStat_1"] <- 0.0')
-    ro.r('assoRes[is.nan(assoRes[,"df_1"]),"df_1"] <- 0.0')
-    ro.r('assoRes[is.nan(assoRes[,"pvalue_1"]),"pvalue_1"] <- 1.0')
+    #ro.r(string_fitGAM)
+    ro.r(f'{string_fitGAM}; assoRes <- data.frame( associationTest(sce, global=FALSE, lineage=TRUE) )')
+
+#    ro.r('print(assoRes)')
+#    ro.r('print(assoRes["CLDN10","waldStat_1"])')   
+#    with localconverter(ro.pandas2ri.converter):
+#        df_assoRes = ro.r['assoRes']
+#        return df_assoRes, adata_deg
+#    ro.r('print(is.nan(assoRes$waldStat_1))')
+    ro.r('assoRes$waldStat_1[is.na(assoRes$waldStat_1)] <- 0.0')
+#    ro.r('print(is.nan(assoRes$waldStat_1))')
+    ro.r('assoRes[is.na(assoRes[,"df_1"]),"df_1"] <- 0.0')
+    ro.r('assoRes[is.na(assoRes[,"pvalue_1"]),"pvalue_1"] <- 1.0')
     with localconverter(ro.pandas2ri.converter):
         df_assoRes = ro.r['assoRes']
     ro.r('assoRes = assoRes[assoRes[,"pvalue_1"] <= %f,]' % deg_pvalue_cutoff)
     ro.r('oAsso <- order(assoRes[,"waldStat_1"], decreasing=TRUE)')
     if n_deg_genes is None:
         n_deg_genes = df_assoRes.shape[0]
+#    print(n_deg_genes)
+    ro.r('rowname <- rownames(assoRes)[oAsso][1:min(%d,length(oAsso))]' % n_deg_genes)
+#    with localconverter(ro.pandas2ri.converter):
+#        rowname = ro.r['rowname']
+#        print(rowname)
+#    return df_assoRes, adata_deg
     string_cluster = 'clusPat <- clusterExpressionPatterns(sce, nPoints = %d,' % n_points\
         + 'verbose=TRUE, genes = rownames(assoRes)[oAsso][1:min(%d,length(oAsso))],' % n_deg_genes \
         + ' k0s=4:5, alphas=c(0.1))'
@@ -228,8 +253,10 @@ def communication_deg_clustering(
     cluster_labels = leiden_clustering(x_pca, k=deg_clustering_knn, resolution=deg_clustering_res, input='embedding')
 
     data_tmp = np.concatenate((df_deg.values, cluster_labels.reshape(-1,1)),axis=1)
+
+    # PZhang added one more column index "V4"
     df_metadata = pd.DataFrame(data=data_tmp, index=df_deg.index,
-        columns=['waldStat','df','pvalue','cluster'] )
+        columns=['waldStat','df','pvalue', 'V4', 'cluster'] )
     return df_metadata, yhat_scaled
 
 def communication_impact(
