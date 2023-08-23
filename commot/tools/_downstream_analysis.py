@@ -150,27 +150,19 @@ def communication_deg_detection(
 
     # send adata to R
     adata_r = anndata2ri.py2rpy(adata_deg)
-    print(adata_r.var_names)
-
-    print("converted adata to R")
-
+    
     ro.r.assign("adata", adata_r)
     ro.r("X <- as.matrix( assay( adata, 'X') )")
     ro.r.assign("pseudoTime", comm_sum)
     ro.r.assign("cellWeight", cell_weight)
 
-    print("Start fitting")
-    # perform analysis (tradeSeq-1.0.1 in R-3.6.3)
+    # perform analysis (tradeSeq-1.10.0 in R-4.4.2)
+    # PZhang: It's strange it only works when combining the following two R commands without invoking rpy2 type error
     string_fitGAM = 'sce <- fitGAM(counts=X, pseudotime=pseudoTime[,1], cellWeights=cellWeight[,1], nknots=%d, verbose=TRUE)' % nknots
     #ro.r(string_fitGAM)
     ro.r(f'{string_fitGAM}; assoRes <- data.frame( associationTest(sce, global=FALSE, lineage=TRUE) )')
 
-#    ro.r('print(assoRes)')
-#    ro.r('print(assoRes["CLDN10","waldStat_1"])')   
-#    with localconverter(ro.pandas2ri.converter):
-#        df_assoRes = ro.r['assoRes']
-#        return df_assoRes, adata_deg
-#    ro.r('print(is.nan(assoRes$waldStat_1))')
+    # PZhang: replaced is.nan with is.na because there are NA in the data and will cause an error later on.
     ro.r('assoRes$waldStat_1[is.na(assoRes$waldStat_1)] <- 0.0')
 #    ro.r('print(is.nan(assoRes$waldStat_1))')
     ro.r('assoRes[is.na(assoRes[,"df_1"]),"df_1"] <- 0.0')
@@ -181,12 +173,8 @@ def communication_deg_detection(
     ro.r('oAsso <- order(assoRes[,"waldStat_1"], decreasing=TRUE)')
     if n_deg_genes is None:
         n_deg_genes = df_assoRes.shape[0]
-#    print(n_deg_genes)
     ro.r('rowname <- rownames(assoRes)[oAsso][1:min(%d,length(oAsso))]' % n_deg_genes)
-#    with localconverter(ro.pandas2ri.converter):
-#        rowname = ro.r['rowname']
-#        print(rowname)
-#    return df_assoRes, adata_deg
+
     string_cluster = 'clusPat <- clusterExpressionPatterns(sce, nPoints = %d,' % n_points\
         + 'verbose=TRUE, genes = rownames(assoRes)[oAsso][1:min(%d,length(oAsso))],' % n_deg_genes \
         + ' k0s=4:5, alphas=c(0.1))'
@@ -254,7 +242,7 @@ def communication_deg_clustering(
 
     data_tmp = np.concatenate((df_deg.values, cluster_labels.reshape(-1,1)),axis=1)
 
-    # PZhang added one more column index "V4"
+    # PZhang: I got an extra column "V4" in the df_deg dataframe, added one more column index "V4"
     df_metadata = pd.DataFrame(data=data_tmp, index=df_deg.index,
         columns=['waldStat','df','pvalue', 'V4', 'cluster'] )
     return df_metadata, yhat_scaled
