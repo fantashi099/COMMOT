@@ -1,0 +1,2 @@
+POT
+git+https://github.com/benedekrozemberczki/karateclub.git
