@@ -209,16 +209,27 @@ def cot_combine_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None,
     else:
         eps_nu_cot = eps_nu_row = eps_nu_col = eps_nu_blk = eps_nu
 
-    P_cot = cot_sparse(S, D, A, M, cutoff, \
+    if isinstance(M, sparse.csr_matrix):
+        # PZhang
+        # 2023/11/15
+        # M is already within the cutoff
+        M_max_sp = M.tocoo()
+    else:
+        max_cutoff = cutoff.max()
+        M_row, M_col = np.where(M <= max_cutoff)
+        M_max_sp = sparse.coo_matrix((M[M_row,M_col], (M_row,M_col)), shape=M.shape)
+
+
+    P_cot = cot_sparse(S, D, A, M_max_sp, cutoff, \
         eps_p=eps_p_cot, eps_mu=eps_mu_cot, eps_nu=eps_nu_cot, rho=rho_cot, \
         nitermax=nitermax, stopthr=stopthr, verbose=False)
-    P_row = cot_row_sparse(S, D, A, M, cutoff, \
+    P_row = cot_row_sparse(S, D, A, M_max_sp, cutoff, \
         eps_p=eps_p_row, eps_mu=eps_mu_row, eps_nu=eps_nu_row, rho=rho_row, \
         nitermax=nitermax, stopthr=stopthr, verbose=False)
-    P_col = cot_col_sparse(S, D, A, M, cutoff, \
+    P_col = cot_col_sparse(S, D, A, M_max_sp, cutoff, \
         eps_p=eps_p_col, eps_mu=eps_mu_col, eps_nu=eps_nu_col, rho=rho_col, \
         nitermax=nitermax, stopthr=stopthr, verbose=False)
-    P_blk = cot_blk_sparse(S, D, A, M, cutoff, \
+    P_blk = cot_blk_sparse(S, D, A, M_max_sp, cutoff, \
         eps_p=eps_p_blk, eps_mu=eps_mu_blk, eps_nu=eps_nu_blk, rho=rho_blk, \
         nitermax=nitermax, stopthr=stopthr, verbose=False)
 
@@ -230,7 +241,7 @@ def cot_combine_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None,
                     + float(weights[2]) * P_col[(i,j)] + float(weights[3]) * P_blk[(i,j)]
     return(P)
 
-def cot_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho=1e1, nitermax=1e4, stopthr=1e-8, verbose=False):
+def cot_sparse(S, D, A, M_max_sp, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho=1e1, nitermax=1e4, stopthr=1e-8, verbose=False):
     """ Solve the collective optimal transport problem with distance limits in sparse format.
     
     Parameters
@@ -241,8 +252,8 @@ def cot_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho=1e1
         Destination distributions over `n_pos_d` positions of `ns_d` destination species.
     A : (ns_s,ns_d) numpy.ndarray
         The cost coefficients for source-destination species pairs. An infinity value indicates that the two species cannot be coupled.
-    M : (n_pos_s,n_pos_d) numpy.ndarray
-        The distance (cost) matrix among the positions.
+    M_max_sp : (n_pos_s,n_pos_d) numpy.ndarray
+        The distance (cost) matrix among the positions within the cutoff.
     cutoff : (ns_s,ns_d) numpy.ndarray
         The distance (cost) cutoff between each source-destination species pair. All transports are restricted by the cutoffs.
     eps_p : float, defaults to 1e-1
@@ -283,9 +294,15 @@ def cot_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho=1e1
     
     C_data, C_row, C_col = [], [], []
 
-    max_cutoff = cutoff.max()
-    M_row, M_col = np.where(M <= max_cutoff)
-    M_max_sp = sparse.coo_matrix((M[M_row,M_col], (M_row,M_col)), shape=M.shape)
+    # if isinstance(M, sparse.csr_matrix):
+    #     # PZhang
+    #     # 2023/11/15
+    #     # M is already within the cutoff
+    #     M_max_sp = M.tocoo()
+    # else:
+    #     max_cutoff = cutoff.max()
+    #     M_row, M_col = np.where(M <= max_cutoff)
+    #     M_max_sp = sparse.coo_matrix((M[M_row,M_col], (M_row,M_col)), shape=M.shape)
     
     cost_scales = []
     for i in range(ns_s):
@@ -336,7 +353,7 @@ def cot_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho=1e1
 
     return P_expand    
 
-def cot_row_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho=1e1, nitermax=1e4, stopthr=1e-8, verbose=False):
+def cot_row_sparse(S, D, A, M_max_sp, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho=1e1, nitermax=1e4, stopthr=1e-8, verbose=False):
     """Solve for each sender species separately.
     """
     if eps_mu is None: eps_mu = eps_p
@@ -349,9 +366,15 @@ def cot_row_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho
     n_pos_s, ns_s = S.shape
     n_pos_d, ns_d = D.shape
 
-    max_cutoff = cutoff.max()
-    M_row, M_col = np.where(M <= max_cutoff)
-    M_max_sp = sparse.coo_matrix((M[M_row,M_col], (M_row,M_col)), shape=M.shape)
+    # if isinstance(M, sparse.csr_matrix):
+    #     # PZhang
+    #     # 2023/11/15
+    #     # M is already within the cutoff
+    #     M_max_sp = M.tocoo()
+    # else:
+    #     max_cutoff = cutoff.max()
+    #     M_row, M_col = np.where(M <= max_cutoff)
+    #     M_max_sp = sparse.coo_matrix((M[M_row,M_col], (M_row,M_col)), shape=M.shape)
     
     P_expand = {}
     for i in range(ns_s):
@@ -407,7 +430,7 @@ def cot_row_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho
 
     return P_expand
 
-def cot_col_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho=1e1, nitermax=1e4, stopthr=1e-8, verbose=False):
+def cot_col_sparse(S, D, A, M_max_sp, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho=1e1, nitermax=1e4, stopthr=1e-8, verbose=False):
     """Solve for each destination species separately.
     """
     if eps_mu is None: eps_mu = eps_p
@@ -420,9 +443,9 @@ def cot_col_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho
     n_pos_s, ns_s = S.shape
     n_pos_d, ns_d = D.shape
 
-    max_cutoff = cutoff.max()
-    M_row, M_col = np.where(M <= max_cutoff)
-    M_max_sp = sparse.coo_matrix((M[M_row,M_col], (M_row,M_col)), shape=M.shape)
+    # max_cutoff = cutoff.max()
+    # M_row, M_col = np.where(M <= max_cutoff)
+    # M_max_sp = sparse.coo_matrix((M[M_row,M_col], (M_row,M_col)), shape=M.shape)
     
     P_expand = {}
     for j in range(ns_d):
@@ -478,7 +501,7 @@ def cot_col_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho
 
     return P_expand
 
-def cot_blk_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho=1e1, nitermax=1e4, stopthr=1e-8, verbose=False):
+def cot_blk_sparse(S, D, A, M_max_sp, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho=1e1, nitermax=1e4, stopthr=1e-8, verbose=False):
     if eps_mu is None: eps_mu = eps_p
     if eps_nu is None: eps_nu = eps_p
     if max(abs(eps_p-eps_mu), abs(eps_p-eps_nu)) > 1e-8:
@@ -489,9 +512,9 @@ def cot_blk_sparse(S, D, A, M, cutoff, eps_p=1e-1, eps_mu=None, eps_nu=None, rho
     n_pos_s, ns_s = S.shape
     n_pos_d, ns_d = D.shape
 
-    max_cutoff = cutoff.max()
-    M_row, M_col = np.where(M <= max_cutoff)
-    M_max_sp = sparse.coo_matrix((M[M_row,M_col], (M_row,M_col)), shape=M.shape)
+    # max_cutoff = cutoff.max()
+    # M_row, M_col = np.where(M <= max_cutoff)
+    # M_max_sp = sparse.coo_matrix((M[M_row,M_col], (M_row,M_col)), shape=M.shape)
 
     P_expand = {}
     for i in range(ns_s):

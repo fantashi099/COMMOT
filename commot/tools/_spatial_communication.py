@@ -114,7 +114,12 @@ class CellCommunication(object):
         if cost_type == 'euc':
             self.M = dmat
         elif cost_type == 'euc_square':
-            self.M = dmat ** 2
+            # PZhang 
+            # 2023/11/15
+            if isinstance(dmat, sparse.csr_matrix):
+                self.M = dmat.multiply(dmat)
+            else:
+                self.M = dmat ** 2
         if np.isscalar(dis_thr):
             if cost_type == 'euc_square':
                 dis_thr = dis_thr ** 2
@@ -148,6 +153,12 @@ class CellCommunication(object):
                 eps_p=cot_eps_p, eps_mu=cot_eps_mu, eps_nu=cot_eps_nu, rho=cot_rho, weights=cot_weights, nitermax=cot_nitermax)
         if smooth:
             # Smooth the expression
+            # PZhang
+            # 2023/11/15
+            # This is a very slow step. Need to be optimized. A sparse version of the smoothing function yet to be implemented.
+            # I add the following check to not break the program.
+            if isinstance(M, sparse.csr_matrix):
+                M = M.toarray()
             S_smth = np.zeros_like(self.S)
             D_smth = np.zeros_like(self.D)
             for i in range(self.nlig):
@@ -182,7 +193,7 @@ class CellCommunication(object):
                     P_deconv_sparse = coo_from_dense_submat(nzind_S, nzind_D, P_deconv, shape=(self.npts, self.npts))
                     self.comm_network[(i,j)] = P_deconv_sparse
 
-    def smooth(self, eta, nu, kernel):
+    def _smooth(self, eta, nu, kernel):
         S_smth = np.zeros_like(self.S)
         D_smth = np.zeros_like(self.D)
         for i in range(self.nlig):
@@ -842,6 +853,8 @@ def cluster_communication_spatial_permutation(
     if not 'spatial_distance' in adata.obsp.keys():
         dis_mat = distance_matrix(adata.obsm["spatial"], adata.obsm["spatial"])
     else:
+        # PZhang 11/15/2023
+        # Usually a csr_matrix is stored in obsp['spatial_distance']. We need to deal with it differently from the numpy array as in scipy.spatial.distance_matrix.
         dis_mat = adata.obsp['spatial_distance']
 
     # Remove unavailable genes from df_ligrec
