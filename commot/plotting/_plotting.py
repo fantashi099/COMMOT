@@ -362,7 +362,7 @@ def plot_cluster_communication_network(
     
     fig, ax = plt.subplots()
     tmp_filename,tmp_type = filename.split('.')
-    ax.legend(handles=legend_elements, loc='center')
+    ax.legend(handles=legend_elements, loc='lower right')
     ax.axis('off')
     fig.savefig(tmp_filename+"_cluster_legend."+tmp_type, bbox_inches='tight')
 
